@@ -1,0 +1,53 @@
+<div style="font-family: monospace;text-align: center;border: 1px solid black;padding-top: 5px; padding-bottom: 5px">
+   <span style="float: left;padding-left: 20px">Where are the crimes?</span>
+   <span style="align: center">STATS 765</span>
+   <span style="float: right;padding-right: 20px">243337734</span>
+</div>
+<br/>
+
+# STATS 765: Project - Exploratory Data Analysis
+
+## Setup
+
+1. Load all files.
+```{r}
+library("tidyverse")
+path <- "./data"
+df_victimizations <- read_csv(paste(path, "/victimizations-data.csv", sep = ""), show_col_types = FALSE)
+df_census <- read_csv(paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""), show_col_types = FALSE)
+df_meshblock <- read_csv(paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""), show_col_types = FALSE)
+```
+
+1. Remove unnecessary columns.
+```{r}
+df_meshblock <- df_meshblock |> select(c(
+   MB2023_V1_00,
+   SA22023_V1_00,
+   SA22023_V1_00_NAME,
+))
+```
+
+1. Join victimizations with meshblock
+
+```{r}
+df_meshblock <- df_meshblock |>
+   mutate(
+      Meshblock = as.numeric(MB2023_V1_00),
+   )
+df_merge <- inner_join(df_victimizations, df_meshblock, by = "Meshblock")
+```
+
+1. Join census with the rest
+
+```{r}
+df_merge <- inner_join(df_census, df_merge, by = c("Statistical area 2 (SA2) 2023 code" = "SA22023_V1_00"))
+```
+
+1. Statistics
+
+```{r}
+dim(df_victimizations)
+dim(df_census)
+dim(df_meshblock)
+dim(df_merge)
+```
