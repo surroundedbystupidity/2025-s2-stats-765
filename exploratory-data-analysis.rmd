@@ -14,8 +14,14 @@
 library("tidyverse")
 path <- "./data"
 df_victimizations <- read_csv(paste(path, "/victimizations-data.csv", sep = ""), show_col_types = FALSE)
-df_census <- read_csv(paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""), show_col_types = FALSE)
-df_meshblock <- read_csv(paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""), show_col_types = FALSE)
+df_census <- read_csv(
+   paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""),
+   show_col_types = FALSE
+)
+df_meshblock <- read_csv(
+   paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""),
+   show_col_types = FALSE
+)
 ```
 
 1. Remove unnecessary columns.
