@@ -9,10 +9,13 @@
 
 ## Setup
 
-1. Load all files.
-```{r}
+```{r include=FALSE}
 library("tidyverse")
-path <- "./data"
+path <- "/home/deck/Documents/Workspace/2025-s2-stats-765/data"
+```
+
+## Load all files.
+```{r}
 df_victimizations <- read_csv(
     paste(path, "/victimizations-data.csv", sep = ""),
     show_col_types = FALSE
@@ -25,32 +28,125 @@ df_meshblock <- read_csv(
     paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""),
     show_col_types = FALSE
 )
-```
-
-1. Remove unnecessary columns.
-```{r}
-df_meshblock <- df_meshblock |> select(c(MB2023_V1_00, SA22023_V1_00, SA22023_V1_00_NAME))
-```
-
-1. Join victimizations with meshblock
-
-```{r}
-df_meshblock <- df_meshblock |>
-    mutate(Meshblock = as.numeric(MB2023_V1_00))
-df_merge <- inner_join(df_victimizations, df_meshblock, by = "Meshblock")
-```
-
-1. Join census with the rest
-
-```{r}
-df_merge <- inner_join(df_census, df_merge, by = c("Statistical area 2 (SA2) 2023 code" = "SA22023_V1_00"))
-```
-
-1. Statistics
-
-```{r}
-dim(df_victimizations)
 dim(df_census)
 dim(df_meshblock)
+dim(df_victimizations)
+```
+
+## Cleanup
+
+### Victimizations
+
+```{r}
+# Find all columns which only have 1 distinct value.
+single_value_column_names <- df_victimizations |>
+    summarize(across(everything(), ~ n_distinct(.))) |>
+    # This anonymous function keeps only those columns in the tibble which have value = 1.
+    select(where(~ 1 == .x)) |>
+    names()
+
+# Remove these columns.
+df_victimizations <- df_victimizations |>
+    select(-all_of(single_value_column_names))
+
+# Year Month and Year Month (copy 2) likely to contain the same values.
+print(
+    df_victimizations |>
+        select(c(`Year Month`, `Year Month (copy 2)`)) |>
+        mutate(diff = `Year Month` != `Year Month (copy 2)`) |>
+        filter(diff == TRUE) |>
+        summarize(n = n())
+)
+
+# Since the above returns a 0 count, drop that column.
+df_victimizations <- df_victimizations |> select(-`Year Month (copy 2)`)
+
+# Final list of columns
+print(colnames(df_victimizations))
+```
+
+### Meshblock
+
+```{r}
+colnames(df_meshblock)
+df_meshblock <- df_meshblock |>
+    # This dataset is to just join the two datasets, so drop any excess columns.
+    select(c(MB2023_V1_00, SA22023_V1_00, SA22023_V1_00_NAME)) |>
+    # The meshblock is a string here, so it needs to be converted to a numeric column before joining.
+    mutate(Meshblock = as.numeric(MB2023_V1_00)) |> # Rename it to Meshblock for ease of joining.
+    select(-MB2023_V1_00)
+
+# Unlikely to have columns that only have 1 distinct values in this data, check anyway.
+print(
+    df_meshblock |>
+        summarize(across(everything(), ~ n_distinct(.))) |>
+        # This anonymous function keeps only those columns in the tibble which have value = 1.
+        select(where(~ 1 == .x)) |>
+        names()
+) # Returns nothing.
+```
+
+### Census
+
+Special Values:
+
+| Value  | Meaning                           |
+| ------ | --------------------------------- |
+| `-997` | Data not collected                |
+| `-999` | Suppressed due to confidentiality |
+
+```{r}
+# The column names are excessively long, shorten them for readability.
+
+df_census <- df_census |>
+    rename_with(
+        ~ .x |>
+            str_replace("Subject pop: Households in rented occupied private dwellings, Year: ", "Rentals - ") |>
+            str_replace("Subject pop: Households in occupied private dwellings, Year: ", "Households - ") |>
+            str_replace(", Measure: Count, Var1:", " -") |>
+            str_replace(", Measure: Median, Var1: ", " - Median: ") |>
+            str_replace(", Measure: Mean, Var1: ", " - Median: ") |>
+            str_replace(" paid by household", "") |>
+            str_replace("Total household income", "Income") |>
+            str_replace("Sector of landlord", "Landlord") |>
+            str_replace("Tenure of household", "Tenure") |>
+            str_replace("Number of usual residents in household", "# of Residents") |>
+            str_replace("Household crowding index", "Crowding Index") |>
+            str_replace("Household composition", "Composition") |>
+            str_replace("Access to telecommunication systems", "Telecom Access") |>
+            str_replace("Number of motor vehicles", "Vehicle Count") |>
+            str_replace("Count of households in occupied private dwellings", "Household Count")
+    )
+
+single_value_colnames_census <- df_census |>
+    summarize(across(everything(), ~ n_distinct(.))) |>
+    # This anonymous function keeps only those columns in the tibble which have value = 1.
+    select(where(~ 1 == .x)) |>
+    names()
+
+# Determine the distinct values available for these columns.
+print(
+    df_census |>
+        select(all_of(single_value_colnames_census)) |>
+        distinct() |>
+        as.data.frame()
+)
+
+# Since all of these have `-997` meaning the data is not available, remove these columns.
+df_census <- df_census |>
+    select(-all_of(single_value_colnames_census))
+```
+
+## Join Datasets
+
+```{r}
+df_merge <- inner_join(
+    df_census,
+    inner_join(
+        df_victimizations, df_meshblock,
+        by = "Meshblock"
+    ),
+    by = c("Statistical area 2 (SA2) 2023 code" = "SA22023_V1_00")
+)
 dim(df_merge)
 ```
