@@ -13,33 +13,30 @@
 ```{r}
 library("tidyverse")
 path <- "./data"
-df_victimizations <- read_csv(paste(path, "/victimizations-data.csv", sep = ""), show_col_types = FALSE)
+df_victimizations <- read_csv(
+    paste(path, "/victimizations-data.csv", sep = ""),
+    show_col_types = FALSE
+)
 df_census <- read_csv(
-   paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""),
-   show_col_types = FALSE
+    paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""),
+    show_col_types = FALSE
 )
 df_meshblock <- read_csv(
-   paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""),
-   show_col_types = FALSE
+    paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""),
+    show_col_types = FALSE
 )
 ```
 
 1. Remove unnecessary columns.
 ```{r}
-df_meshblock <- df_meshblock |> select(c(
-   MB2023_V1_00,
-   SA22023_V1_00,
-   SA22023_V1_00_NAME,
-))
+df_meshblock <- df_meshblock |> select(c(MB2023_V1_00, SA22023_V1_00, SA22023_V1_00_NAME))
 ```
 
 1. Join victimizations with meshblock
 
 ```{r}
 df_meshblock <- df_meshblock |>
-   mutate(
-      Meshblock = as.numeric(MB2023_V1_00),
-   )
+    mutate(Meshblock = as.numeric(MB2023_V1_00))
 df_merge <- inner_join(df_victimizations, df_meshblock, by = "Meshblock")
 ```
 
