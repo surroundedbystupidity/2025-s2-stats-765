@@ -9,13 +9,21 @@
 
 ## Setup
 
-```{r include=FALSE}
+```{r setup, include=FALSE}
 library("tidyverse")
 path <- "~/Documents/Workspace/2025-s2-stats-765/data"
 ```
 
-## Load all files.
-```{r cache = TRUE}
+## Load all files
+`
+Special Values:
+
+| Value  | Meaning                           |
+| ------ | --------------------------------- |
+| `-997` | Data not collected                |
+| `-999` | Suppressed due to confidentiality |
+
+```{r load-files, cache = TRUE}
 df_victimizations <- read_csv(
     paste(path, "/victimizations-data.csv", sep = ""),
     na = c("", "NA", -999, -997), show_col_types = FALSE
@@ -37,7 +45,7 @@ dim(df_victimizations)
 
 ### Victimizations
 
-```{r cache = TRUE}
+```{r cleanup-victimizations, cache = TRUE}
 # Find all columns which only have 1 distinct value.
 single_value_column_names <- df_victimizations |>
     summarize(across(everything(), ~ n_distinct(.))) |>
@@ -67,7 +75,7 @@ colnames(df_victimizations)
 
 ### Meshblock
 
-```{r cache = TRUE}
+```{r cleanup-meshblock, cache = TRUE}
 colnames(df_meshblock)
 df_meshblock <- df_meshblock |>
     # This dataset is to just join the two datasets, so drop any excess columns.
@@ -88,14 +96,7 @@ print(
 
 ### Census
 
-Special Values:
-
-| Value  | Meaning                           |
-| ------ | --------------------------------- |
-| `-997` | Data not collected                |
-| `-999` | Suppressed due to confidentiality |
-
-```{r cache = TRUE}
+```{r cleanup-census, cache = TRUE}
 # The column names are excessively long, shorten them for readability.
 
 df_census <- df_census |>
@@ -139,7 +140,7 @@ df_census <- df_census |>
 
 ## Join Datasets
 
-```{r cache = TRUE}
+```{r join-all, cache = TRUE}
 df_merge <- inner_join(
     df_census,
     inner_join(
@@ -154,7 +155,7 @@ dim(df_merge)
 ## Visualizations
 
 ### Distribution of Committed Offenses
-```{r}
+```{r visualization-1, cache=TRUE}
 # Most committed offenses
 df_merge |>
     group_by(`ANZSOC Division`) |>
@@ -171,7 +172,7 @@ df_merge |>
 ```
 
 ### Criminal Activity Hotspots
-```{r}
+```{r visualization-2}
 # Areas with a high prevalence of crime
 knitr::kable(
     df_merge |>
@@ -182,54 +183,50 @@ knitr::kable(
 )
 ```
 
-### Crime Rate / 1000 Households - Median Income
-```{r}
-df_analysis <- df_merge |>
-    filter(
-        !is.na(Victimisations),
-        !is.na(`Households - 2023 - Median: Income (Median ($))`),
-        !is.na(`Households - 2023 - Household Count (Total)`)
-    ) |>
-    # Group by SA2 and year to aggregate crimes
-    group_by(`Statistical area 2 (SA2) 2023 code`, `Statistical area 2 (SA2) 2023 name`) |>
-    summarize(
-        total_victimisations = sum(Victimisations),
-        median_income = first(`Households - 2023 - Median: Income (Median ($))`),
-        households = first(`Households - 2023 - Household Count (Total)`)
-    ) |>
-    ungroup() |>
-    # Calculate crime rate per 1,000 households
-    mutate(
-        crime_rate_per_1000hh = (total_victimisations / households) * 1000
-    )
+### Overall Crime Rate / 1000 Households in Large Areas
+```{r visualization-3}
+total_number_of_households <- sum(df_merge$`Households - 2023 - Household Count (Total)`)
+# Consider a 0.1% of the total household count as the threshold to identify large SA2s.
+threshold <- total_number_of_households * 0.001
 
-# Weak correlation.
-cor_test <- cor.test(df_analysis$crime_rate_per_1000hh, df_analysis$median_income, use = "complete.obs")
-
-df_analysis |>
-    select(`Statistical area 2 (SA2) 2023 name`, median_income, crime_rate_per_1000hh) |>
-    arrange(desc(crime_rate_per_1000hh))
-
-ggplot(df_analysis, aes(x = median_income, y = crime_rate_per_1000hh)) +
-    geom_point() +
-    geom_smooth(method = "lm", se = TRUE) +
-    labs(
-        title = "Crime Rate vs Median Household Income by SA2",
-        x = "Median Household Income",
-        y = "Crime Rate per 1000 Households"
-    )
+knitr::kable(
+    df_merge |>
+        # Filter all NAs
+        filter(
+            !is.na(Victimisations),
+            !is.na(`Households - 2023 - Household Count (Total)`)
+        ) |>
+        group_by(
+            `Statistical area 2 (SA2) 2023 code`,
+            `Statistical area 2 (SA2) 2023 name`
+        ) |>
+        summarize(
+            total_victimisations = sum(Victimisations),
+            households = sum(`Households - 2023 - Household Count (Total)`),
+            .groups = "drop"
+        ) |>
+        filter(households > threshold) |>
+        mutate(
+            # Crime rate per 1,000 households
+            crime_rate_per_1000hh = (total_victimisations / households) * 1000
+        ) |>
+        select(-`Statistical area 2 (SA2) 2023 code`) |>
+        arrange(desc(crime_rate_per_1000hh)) |>
+        head(n = 10),
+    col.names = c("SA2 Name", "Victimizations", "Households", "CR / 1000 HH")
+)
 ```
 
 ### Crime Rate / 1000 Households - Household Income (< $20,000)
 
-```{r}
+```{r visualization-4}
 df_income_crime <- df_merge |>
-    # Keep only rows with no missing values for key fields
+    # Filter all NAs
     filter(
         !is.na(Victimisations),
         !is.na(`Households - 2023 - Income ($20,000 or less)`),
         !is.na(`Households - 2023 - Income (Total stated)`),
-        !is.na(`Households - 2023 - Household Count (Total)`)
+        !is.na(`Households - 2023 - Household Count (Total)`),
     ) |>
     group_by(
         `Statistical area 2 (SA2) 2023 code`,
@@ -244,28 +241,76 @@ df_income_crime <- df_merge |>
     ) |>
     mutate(
         # Ratio of households earning $20k or less
-        prop_low_income = low_income_count / total_income_count,
+        low_income_ratio = low_income_count * 100 / total_income_count,
         # Crime rate per 1,000 households
         crime_rate_per_1000hh = (total_victimisations / households) * 1000
     )
 
-# Correlation
-cor_test_income <- cor.test(
+# Better correlation
+cor.test(
     df_income_crime$crime_rate_per_1000hh,
-    df_income_crime$prop_low_income
+    df_income_crime$low_income_ratio
 )
 
-df_income_crime |>
-    select(`Statistical area 2 (SA2) 2023 name`, prop_low_income, crime_rate_per_1000hh) |>
-    arrange(desc(prop_low_income))
+knitr::kable(
+    df_income_crime |>
+        select(
+            `Statistical area 2 (SA2) 2023 name`,
+            low_income_ratio,
+            households,
+            crime_rate_per_1000hh
+        ) |>
+        arrange(desc(low_income_ratio)) |>
+        head(n = 20),
+    col.names = c("Statistical Area 2", "% of low income HH", "Households", "Victimizations / 1000 HH")
+)
+```
 
+### Crime Rate / 1000 Households - Crowding
 
-ggplot(df_income_crime, aes(x = prop_low_income, y = crime_rate_per_1000hh)) +
-    geom_point() +
-    geom_smooth(method = "lm", se = TRUE) +
-    labs(
-        title = "Crime Rate vs Low Household Income Proportion by SA2",
-        x = "Median Household Income",
-        y = "Crime Rate per 1000 Households"
+```{r visualization-5}
+df_income_crime <- df_merge |>
+    # Filter all NAs
+    filter(
+        !is.na(Victimisations),
+        !is.na(`Households - 2023 - Income ($20,000 or less)`),
+        !is.na(`Households - 2023 - Income (Total stated)`),
+        !is.na(`Households - 2023 - Household Count (Total)`),
+    ) |>
+    group_by(
+        `Statistical area 2 (SA2) 2023 code`,
+        `Statistical area 2 (SA2) 2023 name`
+    ) |>
+    summarize(
+        total_victimisations = sum(Victimisations),
+        low_income_count = first(`Households - 2023 - Income ($20,000 or less)`),
+        total_income_count = first(`Households - 2023 - Income (Total stated)`),
+        households = first(`Households - 2023 - Household Count (Total)`),
+        .groups = "drop"
+    ) |>
+    mutate(
+        # Ratio of households earning $20k or less
+        low_income_ratio = low_income_count * 100 / total_income_count,
+        # Crime rate per 1,000 households
+        crime_rate_per_1000hh = (total_victimisations / households) * 1000
     )
+
+# Better correlation
+cor.test(
+    df_income_crime$crime_rate_per_1000hh,
+    df_income_crime$low_income_ratio
+)
+
+knitr::kable(
+    df_income_crime |>
+        select(
+            `Statistical area 2 (SA2) 2023 name`,
+            low_income_ratio,
+            households,
+            crime_rate_per_1000hh
+        ) |>
+        arrange(desc(low_income_ratio)) |>
+        head(n = 20),
+    col.names = c("Statistical Area 2", "% of low income HH", "Households", "Victimizations / 1000 HH")
+)
 ```
