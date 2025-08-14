@@ -150,3 +150,13 @@ df_merge <- inner_join(
 )
 dim(df_merge)
 ```
+
+Find crime hotspots as meshblocks
+
+```{r}
+df_victimizations |>
+    inner_join(df_meshblock, by = "Meshblock") |>
+    group_by(SA22023_V1_00_NAME, `ANZSOC Subdivision`) |>
+    summarize(count_by_sa2 = n(), .groups = "drop") |>
+    slice_max(n = 20, order_by = count_by_sa2)
+```
