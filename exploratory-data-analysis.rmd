@@ -29,18 +29,18 @@ Special Values:
 ```{r load-files, cache = TRUE}
 df_victimizations <- read_csv(
     paste(path, "/victimizations-data.csv", sep = ""),
-    na = c("", "NA", -999, -997), show_col_types = FALSE
+    na = c("", "NA"), show_col_types = FALSE
 )
 
 df_census <- read_csv(
     paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""),
+    # Read the special values as NA for simplicity.
     na = c("", "NA", -999, -997), show_col_types = FALSE
 )
 
 df_meshblock <- read_csv(
     paste(path, "/meshblock-higher-geographies-2023-generalized.csv", sep = ""),
-    # Read the special values as NA for simplicity.
-    na = c("", "NA", -999, -997), show_col_types = FALSE
+    na = c("", "NA"), show_col_types = FALSE
 )
 dim(df_census)
 dim(df_meshblock)
@@ -139,9 +139,26 @@ print(
 df_census <- df_census |>
     select(-all_of(single_value_colnames_census))
 
-# Pivot longer to make columns out of column names.
 df_census <- df_census |>
-    select(-contains("2013|2018")) |>
+    # Rename overly long columns.
+    rename_with(
+        ~ .x |>
+            str_replace("Subject pop: Households in rented occupied private dwellings, Year: ", "Rentals - ") |>
+            str_replace("Subject pop: Households in occupied private dwellings, Year: ", "Households - ") |>
+            str_replace(", Measure: Count, Var1:", " -") |>
+            str_replace(", Measure: Median, Var1: ", " - Median: ") |>
+            str_replace(", Measure: Mean, Var1: ", " - Median: ") |>
+            str_replace(" paid by household", "") |>
+            str_replace("Total household income", "Income") |>
+            str_replace("Sector of landlord", "Landlord") |>
+            str_replace("Tenure of household", "Tenure") |>
+            str_replace("Number of usual residents in household", "# of Residents") |>
+            str_replace("Household crowding index", "Crowding Index") |>
+            str_replace("Household composition", "Composition") |>
+            str_replace("Access to telecommunication systems", "Telecom Access") |>
+            str_replace("Number of motor vehicles", "Vehicle Count") |>
+            str_replace("Count of households in occupied private dwellings", "Household Count")
+    ) |>
     # Drop other columns not required to the analysis.
     select(-c(
         OBJECTID,
@@ -154,41 +171,29 @@ df_census <- df_census |>
     rename(
         sa2_code = `Statistical area 2 (SA2) 2023 code`,
         sa2_name = `Statistical area 2 (SA2) 2023 name`
-    ) |>
-    mutate(year = as.integer(year))
+    )
+```
 
-colnames(df_census)
+### Check Available Years
+
+```{r filtering-by-year}
+df_victimizations |>
+    select(year) |>
+    distinct()
+# The only available victimization data is from 2023, so drop the columns from the census data from other years.
+df_victimizations <- df_victimizations |> filter(year == 2023)
+df_census <- df_census |> select(!matches("2018|2013"))
 ```
 
 ## Join Datasets
 
-### Check Available Years
-
-```{r}
-df_census |>
-    select(year) |>
-    distinct()
-df_victimizations |>
-    select(year) |>
-    distinct()
-```
-
-The only common year is 2023, so drop the rest of the rows.
-
-```{r}
-df_victimizations <- df_victimizations |> filter(year == 2023)
-df_census <- df_census |> select(contains("2018|2013"))
-```
-
 ```{r join-all, cache = TRUE}
-df_j1 <- inner_join(
-    df_victimizations, df_meshblock,
-    by = c("Meshblock" = "meshblock")
-)
-
 df_merge <- inner_join(
     df_census,
-    df_j1,
+    inner_join(
+        df_victimizations, df_meshblock,
+        by = "meshblock"
+    ),
     by = c("sa2_code", "sa2_name")
 )
 dim(df_merge)
@@ -218,7 +223,7 @@ df_merge |>
 # Areas with a high prevalence of crime
 knitr::kable(
     df_merge |>
-        group_by(SA22023_V1_00_NAME) |>
+        group_by(sa2_name) |>
         summarize(count_by_sa2 = n(), .groups = "drop") |>
         slice_max(n = 10, order_by = count_by_sa2),
     col.names = c("Statistical Area 2 Name", "Number of offenses")
@@ -226,6 +231,7 @@ knitr::kable(
 ```
 
 ### Overall Crime Rate / 1000 Households in Large Areas
+
 ```{r visualization-3, cache = TRUE}
 total_number_of_households <- sum(df_merge$`Households - 2023 - Household Count (Total)`)
 # Consider a 0.1% of the total household count as the threshold to identify large SA2s.
@@ -238,10 +244,7 @@ knitr::kable(
             !is.na(Victimisations),
             !is.na(`Households - 2023 - Household Count (Total)`)
         ) |>
-        group_by(
-            `Statistical area 2 (SA2) 2023 code`,
-            `Statistical area 2 (SA2) 2023 name`
-        ) |>
+        group_by(sa2_code, sa2_name) |>
         summarize(
             total_victimisations = sum(Victimisations),
             households = sum(`Households - 2023 - Household Count (Total)`),
@@ -252,196 +255,30 @@ knitr::kable(
             # Crime rate per 1,000 households
             crime_rate_per_1000hh = (total_victimisations / households) * 1000
         ) |>
-        select(-`Statistical area 2 (SA2) 2023 code`) |>
+        select(-sa2_code) |>
         arrange(desc(crime_rate_per_1000hh)) |>
         head(n = 10),
     col.names = c("SA2 Name", "Victimizations", "Households", "CR / 1000 HH")
 )
 ```
 
-#### General Purpose Extractor
+### Median Household Income vs Total Crimes by Neighborhood
 
-```{r extractor}
-years <- unique(str_extract(names(df_merge), "\\b20\\d{2}\\b")) |> na.omit()
-
-# General-purpose function to calculate a metric vs crime rate for a given year
-calc_metric_vs_crime <- function(df, year, metric_pattern, total_pattern, hh_pattern) {
-    # Dynamically find column names based on patterns and year
-    metric_col <- grep(paste0(year, metric_pattern), names(df), value = TRUE)
-    total_col <- grep(paste0(year, total_pattern), names(df), value = TRUE)
-    hh_col <- grep(paste0(year, hh_pattern), names(df), value = TRUE)
-
-    if (length(metric_col) != 1 || length(total_col) != 1 || length(hh_col) != 1) {
-        stop("Could not uniquely identify one column for each pattern.")
-    }
-
-    df |>
-        filter(
-            !is.na(Victimisations),
-            !is.na(.data[[metric_col]]),
-            !is.na(.data[[total_col]]),
-            !is.na(.data[[hh_col]])
-        ) |>
-        group_by(
-            `Statistical area 2 (SA2) 2023 code`,
-            `Statistical area 2 (SA2) 2023 name`
-        ) |>
-        summarise(
-            total_victimisations = sum(Victimisations, na.rm = TRUE),
-            metric_count = first(.data[[metric_col]]),
-            total_count = first(.data[[total_col]]),
-            households = first(.data[[hh_col]]),
-            .groups = "drop"
-        ) |>
-        mutate(
-            year = year,
-            metric_prop = metric_count / total_count,
-            crime_rate_per_1000hh = (total_victimisations / households) * 1000
-        )
-}
-```
-
-### Crime Rate / 1000 Households - Low Household Income (< $20,000)
-
-```{r visualization-4a, cache = TRUE, fig.width=10, fig.height=10}
-bind_rows(
-    lapply(years, function(yr) {
-        calc_metric_vs_crime(
-            df = df_merge,
-            year = yr,
-            metric_pattern = " - Income \\(\\$20,000 or less\\)",
-            total_pattern = " - Income \\(Total stated\\)",
-            hh_pattern = " - Household Count \\(Total\\)"
-        )
-    })
-) |>
-    group_by(year) |>
-    slice_max(metric_prop, n = 10) |>
-    ungroup() |>
-    ggplot(aes(
-        x = reorder(`Statistical area 2 (SA2) 2023 name`, metric_prop),
-        y = metric_prop,
-        fill = crime_rate_per_1000hh
-    )) +
-    geom_col() +
-    coord_flip() +
-    facet_wrap(~year, scales = "free_y") +
-    scale_fill_viridis_c(option = "plasma") +
+```{r income-vs-crimes, fig.width=10, fig.height=7}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `Median household income ($)` = median(`Households - 2023 - Median: Income (Median ($))`, na.rm = TRUE),
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    ggplot(aes(x = `Median household income ($)`, y = total_crime)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "blue") +
     labs(
-        title = "Top 10 SA2s by Crime Rate for Areas with Low Income",
-        subtitle = "Fill colour shows crime rate per 1,000 households",
-        x = "SA2 Name",
-        y = "Proportion (Low Income Households / Total Households)",
-        fill = "Crime Rate\nper 1,000 HH"
+        title = "Median Household Income vs Total Crimes by Neighborhood",
+        x = "Median household income ($)",
+        y = "Total Victimisations"
     ) +
-    theme_minimal()
-```
-
-### Crime Rate / 1000 Households - High Household Income ($150,001-$200,000)
-
-```{r visualization-4b, cache = TRUE, fig.width=10, fig.height=10}
-bind_rows(
-    lapply(years, function(yr) {
-        calc_metric_vs_crime(
-            df = df_merge,
-            year = yr,
-            metric_pattern = " - Income \\(\\$150,001-\\$200,000\\)",
-            total_pattern = " - Income \\(Total stated\\)",
-            hh_pattern = " - Household Count \\(Total\\)"
-        )
-    })
-) |>
-    group_by(year) |>
-    slice_max(metric_prop, n = 10) |>
-    ungroup() |>
-    ggplot(aes(
-        x = reorder(`Statistical area 2 (SA2) 2023 name`, metric_prop),
-        y = metric_prop,
-        fill = crime_rate_per_1000hh
-    )) +
-    geom_col() +
-    coord_flip() +
-    facet_wrap(~year, scales = "free_y") +
-    scale_fill_viridis_c(option = "plasma") +
-    labs(
-        title = "Top 10 SA2s by Crime Rate for Areas with High Income",
-        subtitle = "Fill colour shows crime rate per 1,000 households",
-        x = "SA2 Name",
-        y = "Proportion (High Income Households / Total Households)",
-        fill = "Crime Rate\nper 1,000 HH"
-    ) +
-    theme_minimal()
-```
-
-### Crime Rate / 1000 Households - Crowding Level = Severely Crowded
-
-```{r visualization-5, cache = TRUE, fig.width=10, fig.height=10}
-# Top 10 per year
-bind_rows(
-    lapply(years, function(yr) {
-        calc_metric_vs_crime(
-            df = df_merge,
-            year = yr,
-            metric_pattern = " - Crowding Index \\(Two or more bedrooms needed \\(severely crowded\\)\\)",
-            total_pattern = " - Crowding Index \\(Total\\)",
-            hh_pattern = " - Household Count \\(Total\\)"
-        )
-    })
-) |>
-    group_by(year) |>
-    slice_max(metric_prop, n = 10) |>
-    ungroup() |>
-    ggplot(aes(
-        x = reorder(`Statistical area 2 (SA2) 2023 name`, metric_prop),
-        y = metric_prop,
-        fill = crime_rate_per_1000hh
-    )) +
-    geom_col() +
-    coord_flip() +
-    facet_wrap(~year, scales = "free_y") +
-    scale_fill_viridis_c(option = "plasma") +
-    labs(
-        title = "Top 10 SA2s by Crime Rate for Severely Crowded Areas",
-        subtitle = "Fill color shows crime rate per 1,000 households",
-        x = "SA2 Name",
-        y = "Crowding Index (Severely Crowded / Total)",
-        fill = "Crime Rate\nper 1,000 HH"
-    ) +
-    theme_minimal()
-```
-
-### Crime Rate / 1000 Households - Crowding Level = Crowded
-
-```{r visualization-6, cache = TRUE, fig.width=10, fig.height=10}
-bind_rows(
-    lapply(years, function(yr) {
-        calc_metric_vs_crime(
-            df = df_merge,
-            year = yr,
-            metric_pattern = " - Crowding Index \\(Crowded\\)",
-            total_pattern = " - Crowding Index \\(Total\\)",
-            hh_pattern = " - Household Count \\(Total\\)"
-        )
-    })
-) |>
-    group_by(year) |>
-    slice_max(metric_prop, n = 10) |>
-    ungroup() |>
-    ggplot(aes(
-        x = reorder(`Statistical area 2 (SA2) 2023 name`, metric_prop),
-        y = metric_prop,
-        fill = crime_rate_per_1000hh
-    )) +
-    geom_col() +
-    coord_flip() +
-    facet_wrap(~year, scales = "free_y") +
-    scale_fill_viridis_c(option = "plasma") +
-    labs(
-        title = "Top 10 SA2s by Crime Rate for Crowded Areas",
-        subtitle = "Fill color shows crime rate per 1,000 households",
-        x = "SA2 Name",
-        y = "Crowding Index (Crowded / Total)",
-        fill = "Crime Rate\nper 1,000 HH"
-    ) +
-    theme_minimal()
+    theme_minimal() +
+    theme(strip.text = element_text(size = 12, face = "bold"))
 ```
