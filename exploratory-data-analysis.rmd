@@ -1,14 +1,9 @@
 ---
 title: STATS 765 - Where are the Crimes? - Milestone 2
+author: Sujay Anjankar - 2433337734
 toc-title: Table of Contents
 ---
 
-<div style="font-family: monospace;text-align: center;border: 1px solid black;padding-top: 5px; padding-bottom: 5px">
-   <span style="float: left;padding-left: 20px">Where are the crimes?</span>
-   <span style="align: center">STATS 765</span>
-   <span style="float: right;padding-right: 20px">243337734</span>
-</div>
-<br/>
 
 ```{r setup, include=FALSE}
 ## Setup
@@ -75,14 +70,10 @@ print(
 )
 
 # Since the above returns a 0 count, drop that column.
-df_victimizations <- df_victimizations |> select(-c(`Year Month (copy 2)`))
-
-# Extract the year to join with the census data.
-df_victimizations <- df_victimizations |>
-    mutate(year = as.numeric(str_sub(`Year Month`, start = -4L, end = -1L)))
-
-# Remove excess columns not relevant to analysis.
-df_victimizations <- df_victimizations |>
+df_victimizations <- df_victimizations |> select(-c(`Year Month (copy 2)`)) |>
+    # Extract the year to join with the census data.
+    mutate(year = as.numeric(str_sub(`Year Month`, start = -4L, end = -1L))) |>
+    # Remove excess columns not relevant to analysis.
     select(
         -c(`Month Year`, `Occurrence Day Of Week`, `Occurrence Hour Of Day`, `Territorial Authority`, `Location Type`)
     )
@@ -182,7 +173,10 @@ df_victimizations |>
     distinct()
 # The only available victimization data is from 2023, so drop the columns from the census data from other years.
 df_victimizations <- df_victimizations |> filter(year == 2023)
-df_census <- df_census |> select(!matches("2018|2013"))
+df_census <- df_census |>
+    select(!matches("2013|2018")) |>
+    # Since it is all 2023 data, remove the year from column names.
+    rename_with(~ .x |> str_replace(" - 2023", ""))
 ```
 
 ## Join Datasets
@@ -207,7 +201,6 @@ dim(df_merge)
 df_merge |>
     group_by(`ANZSOC Division`) |>
     summarize(count_by_subdivision = n(), .groups = "drop") |>
-    # slice_max(n = 10, order_by = count_by_subdivision) |>
     ggplot(aes(x = "", y = count_by_subdivision, fill = `ANZSOC Division`)) +
     geom_bar(stat = "identity", width = 1) +
     coord_polar("y", start = 0) +
@@ -226,14 +219,14 @@ knitr::kable(
         group_by(sa2_name) |>
         summarize(count_by_sa2 = n(), .groups = "drop") |>
         slice_max(n = 10, order_by = count_by_sa2),
-    col.names = c("Statistical Area 2 Name", "Number of offenses")
+    col.names = c("Statistical Area 2 Name", "Number of Victimizations")
 )
 ```
 
 ### Overall Crime Rate / 1000 Households in Large Areas
 
 ```{r visualization-3, cache = TRUE}
-total_number_of_households <- sum(df_merge$`Households - 2023 - Household Count (Total)`)
+total_number_of_households <- sum(df_merge$`Households - Household Count (Total)`)
 # Consider a 0.1% of the total household count as the threshold to identify large SA2s.
 threshold <- total_number_of_households * 0.001
 
@@ -242,12 +235,12 @@ knitr::kable(
         # Filter all NAs
         filter(
             !is.na(Victimisations),
-            !is.na(`Households - 2023 - Household Count (Total)`)
+            !is.na(`Households - Household Count (Total)`)
         ) |>
         group_by(sa2_code, sa2_name) |>
         summarize(
             total_victimisations = sum(Victimisations),
-            households = sum(`Households - 2023 - Household Count (Total)`),
+            households = sum(`Households - Household Count (Total)`),
             .groups = "drop"
         ) |>
         filter(households > threshold) |>
@@ -264,34 +257,35 @@ knitr::kable(
 
 ### Median Household Income vs Total Crimes by Neighborhood
 
-```{r income-vs-crimes, fig.width=10, fig.height=7}
+Observation: Number of victimizations is observed to trend downwards with an increase in median household income.
+
+```{r income-vs-crimes, fig.width=10, fig.height=6}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
-        `Median household income ($)` = median(`Households - 2023 - Median: Income (Median ($))`, na.rm = TRUE),
+        `Median household income ($)` = median(`Households - Median: Income (Median ($))`, na.rm = TRUE),
         total_crime = sum(Victimisations, na.rm = TRUE)
     ) |>
     ggplot(aes(x = `Median household income ($)`, y = total_crime)) +
     geom_point(alpha = 0.5) +
-    geom_smooth(method = "lm", color = "blue") +
+    geom_smooth(method = "lm") +
     labs(
         title = "Median Household Income vs Total Crimes by Neighborhood",
         x = "Median household income ($)",
         y = "Total Victimisations"
-    ) +
-    theme_minimal()
+    )
 ```
 
 ### Communication Access vs Total Crimes by Neighborhood
 
-```{r telecom-vs-crimes, fig.width=10, fig.height=7}
+```{r telecom-vs-crimes, fig.width=10, fig.height=6}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
-        `No Access to Telecom (%)` = sum(`Households - 2023 - Telecom Access (No access to telecommunication systems)`,
+        `No Access to Telecom (%)` = sum(`Households - Telecom Access (No access to telecommunication systems)`,
             na.rm = TRUE
         ) /
-            sum(`Households - 2023 - Telecom Access (Total stated)`, na.rm = TRUE) * 100,
+            sum(`Households - Telecom Access (Total stated)`, na.rm = TRUE) * 100,
         total_crime = sum(Victimisations, na.rm = TRUE)
     ) |>
     ggplot(aes(x = `No Access to Telecom (%)`, y = total_crime)) +
@@ -307,16 +301,16 @@ df_merge |>
 
 ### Crowding Rates vs Total Crimes by Neighborhood
 
-```{r crowding-vs-crimes, fig.width=10, fig.height=7}
+```{r crowding-vs-crimes, fig.width=10, fig.height=6}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
         `Crowded (%)` =
-            sum(`Households - 2023 - Crowding Index (Crowded)`, na.rm = TRUE)
-            / sum(`Households - 2023 - Crowding Index (Total stated)`, na.rm = TRUE) * 100,
+            sum(`Households - Crowding Index (Crowded)`, na.rm = TRUE)
+            / sum(`Households - Crowding Index (Total stated)`, na.rm = TRUE) * 100,
         `Not Crowded (%)` =
-            sum(`Households - 2023 - Crowding Index (Not crowded)`, na.rm = TRUE)
-            / sum(`Households - 2023 - Crowding Index (Total stated)`, na.rm = TRUE) * 100,
+            sum(`Households - Crowding Index (Not crowded)`, na.rm = TRUE)
+            / sum(`Households - Crowding Index (Total stated)`, na.rm = TRUE) * 100,
         total_crime = sum(Victimisations, na.rm = TRUE)
     ) |>
     pivot_longer(
