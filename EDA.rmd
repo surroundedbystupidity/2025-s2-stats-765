@@ -1,0 +1,51 @@
+# Where are the Crimes
+### Aidan Jared ajar667, Simon Loh, Sujay
+
+
+```{r}
+library("tidyverse")
+library("plyr")
+crime_data = read.csv("data/ANZSOC_Full Data_data.csv") |>
+  mutate(Year.Month = my(Year.Month))
+```
+
+Loading in the crime data and setting time columns to datetime format
+
+```{r}
+names = c("MB2023_V1_00" = "Meshblock", "SA22023_V1_00" = "SA2")
+meshblock_data = read.csv("data/meshblock-higher-geographies-2023-generalised.csv") |> 
+  select(MB2023_V1_00, SA22023_V1_00) |>
+  rename(replace = names)
+```
+
+Loading in meshblock data and only selecting relevent columns and renaming them
+
+```{r}
+names = c("SA22023_V1_00_usual_residence_address" = "SA2.Residence", "SA22023_V1_00_NAME_ASCII_usual_residence_address" = "Residence.Name", "SA22023_V1_00_workplace_address" = "SA2.Workplace", "SA22023_V1_00_NAME_ASCII_workplace_address" = "Workplace.Name")
+work_travel = read.csv("data/2023-census-main-means-of-travel-to-work-by-statistical-area-2.csv") |>
+  rename(replace = names) |>
+  select(-any_of(c("SA22023_V1_00_NAME_workplace_address", "SA22023_V1_00_NAME_usual_residence_address")))
+```
+
+Loading in travel data
+
+```{r}
+crime_SA2 = crime_data |> join(meshblock_data, by="Meshblock") |> 
+  filter(!is.na(SA2)) |>
+  left_join(work_travel |>
+         select(SA2.Residence, Residence.Name),
+        by=c("SA2" = "SA2.Residence"))
+```
+
+joining getting an overview of all the crime in each SA2 per Year Month
+
+```{r}
+temporal_location = crime_SA2 |> 
+  select("Year.Month", "Territorial.Authority", "Residence.Name") |>
+  group_by("Year.Month", "Territorial.Authority", "Residence.Name") |>
+  count()
+
+ggplot(data = temporal_location, aes(x = Residence.Name, y = freq), colors = "Territorial Authority") +
+  geom_bar(stat='identity') +
+  facet_wrap(~ Year.Month, scales = "free")
+```
