@@ -202,7 +202,7 @@ dim(df_merge)
 ## Visualizations
 
 ### Distribution of Committed Offenses
-```{r visualization-1, cache=TRUE}
+```{r visualization-1, cache = TRUE}
 # Most committed offenses
 df_merge |>
     group_by(`ANZSOC Division`) |>
@@ -279,6 +279,59 @@ df_merge |>
         x = "Median household income ($)",
         y = "Total Victimisations"
     ) +
-    theme_minimal() +
-    theme(strip.text = element_text(size = 12, face = "bold"))
+    theme_minimal()
 ```
+
+### Communication Access vs Total Crimes by Neighborhood
+
+```{r telecom-vs-crimes, fig.width=10, fig.height=7}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `No Access to Telecom (%)` = sum(`Households - 2023 - Telecom Access (No access to telecommunication systems)`,
+            na.rm = TRUE
+        ) /
+            sum(`Households - 2023 - Telecom Access (Total stated)`, na.rm = TRUE) * 100,
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    ggplot(aes(x = `No Access to Telecom (%)`, y = total_crime)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm", color = "blue") +
+    labs(
+        title = "Telecom Access Rate vs Total Crimes by Neighborhood",
+        x = "No Access to Telecom (%)",
+        y = "Total Victimisations"
+    ) +
+    theme_minimal()
+```
+
+### Crowding Rates vs Total Crimes by Neighborhood
+
+```{r crowding-vs-crimes, fig.width=10, fig.height=7}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `Crowded (%)` =
+            sum(`Households - 2023 - Crowding Index (Crowded)`, na.rm = TRUE)
+            / sum(`Households - 2023 - Crowding Index (Total stated)`, na.rm = TRUE) * 100,
+        `Not Crowded (%)` =
+            sum(`Households - 2023 - Crowding Index (Not crowded)`, na.rm = TRUE)
+            / sum(`Households - 2023 - Crowding Index (Total stated)`, na.rm = TRUE) * 100,
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    pivot_longer(
+        cols = c(`Crowded (%)`, `Not Crowded (%)`),
+        names_to = "attribute",
+        values_to = "value"
+    ) |>
+    ggplot(aes(x = value, y = total_crime)) +
+    geom_point(alpha = 0.7) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    facet_wrap(~attribute, scales = "free_x") +
+    labs(
+        title = "Crowding vs Total Crimes by Neighborhood",
+        x = NULL,
+        y = "Total Victimisations"
+    )
+```
+
