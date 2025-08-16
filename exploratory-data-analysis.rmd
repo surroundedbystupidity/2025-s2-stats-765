@@ -7,11 +7,21 @@ toc-title: Table of Contents
 
 ```{r setup, include=FALSE}
 ## Setup
-library("tidyverse")
+library(tidyverse)
+library(GGally)
+library(leaps)
 path <- "~/Documents/Workspace/2025-s2-stats-765/data"
 ```
 
 ## Load Files
+
+Data Source:
+
+|Dataset|Source|
+|--|--|
+|Census|https://2023census-statsnz.hub.arcgis.com/maps/7d8a5993db144f95bf9be2f64b14e467/about|
+|Meshblock|https://datafinder.stats.govt.nz/layer/111224-meshblock-higher-geographies-2023-generalised/|
+|Victimisations|https://public.tableau.com/app/profile/policedata.nz/viz/VictimisationsTimeandPlace/Summary (Redirected from policedata.nz)|
 
 Special Values:
 
@@ -28,7 +38,7 @@ df_victimizations <- read_csv(
 )
 
 df_census <- read_csv(
-    paste(path, "/2023_Census_totals_by_topic_for_households_by_SA2.csv", sep = ""),
+    paste(path, "/2023-census-totals-by-topic-for-households-by-statistical-ar.csv", sep = ""),
     # Read the special values as NA for simplicity.
     na = c("", "NA", -999, -997), show_col_types = FALSE
 )
@@ -40,6 +50,7 @@ df_meshblock <- read_csv(
 dim(df_census)
 dim(df_meshblock)
 dim(df_victimizations)
+describe(df_victimizations)
 ```
 
 ## Cleanup
@@ -196,6 +207,7 @@ dim(df_merge)
 ## Visualizations
 
 ### Distribution of Committed Offenses
+
 ```{r visualization-1, cache = TRUE}
 # Most committed offenses
 df_merge |>
@@ -203,15 +215,18 @@ df_merge |>
     summarize(count_by_subdivision = n(), .groups = "drop") |>
     ggplot(aes(x = "", y = count_by_subdivision, fill = `ANZSOC Division`)) +
     geom_bar(stat = "identity", width = 1) +
+    scale_fill_viridis_d(direction = -1) +
     coord_polar("y", start = 0) +
     labs(
         title = "Distribution of Committed Offenses",
         x = "",
         y = ""
-    )
+    ) +
+    theme_minimal()
 ```
 
 ### Criminal Activity Hotspots
+
 ```{r visualization-2, cache = TRUE}
 # Areas with a high prevalence of crime
 knitr::kable(
@@ -223,7 +238,9 @@ knitr::kable(
 )
 ```
 
-### Overall Crime Rate / 1000 Households in Large Areas
+### Household Count
+
+#### Overall Crime Rate / 1000 Households in Large Areas
 
 ```{r visualization-3, cache = TRUE}
 total_number_of_households <- sum(df_merge$`Households - Household Count (Total)`)
@@ -255,18 +272,21 @@ knitr::kable(
 )
 ```
 
-### Median Household Income vs Total Crimes by Neighborhood
+
+### Household Income
+
+#### Median Household Income vs Total Crimes by Neighborhood
 
 Observation: Number of victimizations is observed to trend downwards with an increase in median household income.
 
-```{r income-vs-crimes, fig.width=10, fig.height=6}
+```{r income-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
         `Median household income ($)` = median(`Households - Median: Income (Median ($))`, na.rm = TRUE),
         total_crime = sum(Victimisations, na.rm = TRUE)
     ) |>
-    ggplot(aes(x = `Median household income ($)`, y = total_crime)) +
+    ggplot(aes(x = `Median household income ($)`, y = total_crime, size = total_crime)) +
     geom_point(alpha = 0.5) +
     geom_smooth(method = "lm") +
     labs(
@@ -276,9 +296,11 @@ df_merge |>
     )
 ```
 
-### Communication Access vs Total Crimes by Neighborhood
+### Telecom Access
 
-```{r telecom-vs-crimes, fig.width=10, fig.height=6}
+#### Communication Access vs Total Crimes by Neighborhood
+
+```{r telecom-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -288,9 +310,11 @@ df_merge |>
             sum(`Households - Telecom Access (Total stated)`, na.rm = TRUE) * 100,
         total_crime = sum(Victimisations, na.rm = TRUE)
     ) |>
-    ggplot(aes(x = `No Access to Telecom (%)`, y = total_crime)) +
+    ggplot(aes(x = `No Access to Telecom (%)`, y = total_crime, size = total_crime)) +
     geom_point(alpha = 0.5) +
-    geom_smooth(method = "lm", color = "blue") +
+    geom_smooth(method = "lm", color = "blue", se = FALSE) +
+    xlim(0, 10) +
+    ylim(0, 1000) +
     labs(
         title = "Telecom Access Rate vs Total Crimes by Neighborhood",
         x = "No Access to Telecom (%)",
@@ -299,9 +323,11 @@ df_merge |>
     theme_minimal()
 ```
 
-### Crowding Rates vs Total Crimes by Neighborhood
+### Crowding Index
 
-```{r crowding-vs-crimes, fig.width=10, fig.height=6}
+#### Crowding Rates vs Total Crimes by Neighborhood
+
+```{r crowding-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -329,3 +355,270 @@ df_merge |>
     )
 ```
 
+### Rental Landlord Type
+
+#### Landlord Sector vs Total Crimes
+
+```{r landlord-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `Private (%)` = sum(`Rentals - Landlord (Private person, trust, or business)`, na.rm = TRUE)
+        / sum(`Rentals - Landlord (Total stated)`, na.rm = TRUE) * 100,
+        `Local authority (%)` = sum(`Rentals - Landlord (Local authority or city council)`, na.rm = TRUE)
+        / sum(`Rentals - Landlord (Total stated)`, na.rm = TRUE) * 100,
+        `Kāinga Ora (%)` = sum(`Rentals - Landlord (Kāinga Ora/Housing NZ)`, na.rm = TRUE)
+        / sum(`Rentals - Landlord (Total stated)`, na.rm = TRUE) * 100,
+        `Iwi, hapū, or Māori land trust (%)` = sum(`Rentals - Landlord (Iwi, hapū, or Māori land trust)`, na.rm = TRUE)
+        / sum(`Rentals - Landlord (Total stated)`, na.rm = TRUE) * 100,
+        `Others (%)` = sum(`Rentals - Landlord (Other community housing provider)`, na.rm = TRUE) +
+            sum(`Rentals - Landlord (Not elsewhere included)`, na.rm = TRUE) +
+            sum(
+                `Rentals - Landlord (Other state-owned corporation or state-owned enterprise, or government department or ministry)`,
+                na.rm = TRUE
+            ) / sum(`Rentals - Landlord (Total stated)`, na.rm = TRUE) * 100,
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    pivot_longer(
+        cols = c(
+            `Private (%)`,
+            `Local authority (%)`,
+            `Kāinga Ora (%)`,
+            `Iwi, hapū, or Māori land trust (%)`,
+            `Others (%)`
+        ),
+        names_to = "attribute",
+        values_to = "value"
+    ) |>
+    ggplot(aes(x = value, y = total_crime)) +
+    geom_point(alpha = 0.7) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    facet_wrap(~attribute, scales = "free_x") +
+    labs(
+        title = "Landlord Sector vs Total Crimes by Neighborhood",
+        x = NULL,
+        y = "Total Victimisations"
+    )
+```
+
+### Weekly Rent
+
+#### Weekly Rental ($) vs Total Crimes
+
+```{r rental-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `Median Weekly Rent ($)` = median(`Rentals - Median: Weekly rent (Median ($))`, na.rm = TRUE),
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    ggplot(aes(x = `Median Weekly Rent ($)`, y = total_crime)) +
+    geom_point(alpha = 0.5) +
+    geom_smooth(method = "lm") +
+    labs(
+        title = "Median Weekly Rent vs Total Crimes by Neighborhood",
+        x = "Median weekly rental ($)",
+        y = "Total Victimisations"
+    )
+```
+
+#### Faceting
+
+```{r low-rent-vs-high-rent, fig.width=10, fig.height=6, cache=TRUE}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `Low Rent (%)` = (
+            sum(`Rentals - Weekly rent (Under $200)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($200 - $299)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($300 - $399)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($400 - $499)`, na.rm = TRUE)
+        ) * 100 /
+            sum(`Rentals - Weekly rent (Total stated)`, na.rm = TRUE),
+        `High Rent (%)` = (
+            sum(`Rentals - Weekly rent ($400 - $499)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($500 - $599)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($600 - $699)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($700 - $799)`, na.rm = TRUE) +
+                sum(`Rentals - Weekly rent ($800 and over)`, na.rm = TRUE)
+        ) * 100 /
+            sum(`Rentals - Weekly rent (Total stated)`, na.rm = TRUE),
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    pivot_longer(
+        cols = c(`High Rent (%)`, `Low Rent (%)`),
+        names_to = "attribute",
+        values_to = "value"
+    ) |>
+    ggplot(aes(x = value, y = total_crime)) +
+    geom_point(alpha = 0.7) +
+    scale_color_viridis_c() +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    facet_wrap(~attribute, scales = "free_x") +
+    labs(
+        title = "Rental vs Total Crimes by Neighborhood",
+        x = NULL,
+        y = "Total Victimisations"
+    )
+```
+
+### Vehicle Ownership
+
+### Car Theft
+
+```{r car-theft} 
+knitr::kable(df_merge |> group_by(`ANZSOC Division`) |> summarize(n = sum(Victimisations)) |> arrange(desc(n)))
+
+df_merge |>
+    filter(`ANZSOC Subdivision` == "Motor vehicle theft and related offences") |>
+    group_by(sa2_name) |>
+    summarize(
+        `No Vehicle (%)` =
+            sum(`Households - Vehicle Count (No motor vehicle)`, na.rm = TRUE)
+            * 100 / sum(`Households - Vehicle Count (Total stated)`, na.rm = TRUE),
+        `> 1 Vehicle (%)` = (
+            sum(`Households - Vehicle Count (Total stated)`, na.rm = TRUE)
+            - sum(`Households - Vehicle Count (No motor vehicle)`, na.rm = TRUE)
+        ) * 100 / sum(`Households - Vehicle Count (Total stated)`, na.rm = TRUE),
+        total_crime = sum(Victimisations, na.rm = TRUE)
+    ) |>
+    pivot_longer(
+        cols = c(`No Vehicle (%)`, `> 1 Vehicle (%)`),
+        names_to = "attribute",
+        values_to = "value"
+    ) |>
+    ggplot(aes(x = value, y = total_crime)) +
+    geom_point(alpha = 0.7) +
+    geom_smooth(method = "lm", se = FALSE, color = "blue") +
+    facet_wrap(~attribute, scales = "free_x") +
+    labs(
+        title = "Vehicle Ownership vs Car vehicular Offenses",
+        x = NULL,
+        y = "Total Victimisations"
+    )
+```
+
+### Misc Panel Chart - 1
+
+```{r}
+ggpairs(
+    df_merge |>
+        filter(`ANZSOC Subdivision` == "Motor vehicle theft and related offences") |>
+        select(c(`Victimisations`, `Households - Vehicle Count (No motor vehicle)`)),
+    title = "Scatterplot Matrix",
+    lower = list(continuous = wrap("smooth", alpha = 0.5, size = 0.8)),
+    upper = list(continuous = wrap("cor", size = 3)),
+    diag = list(continuous = wrap("densityDiag")),
+    cardinality_threshold = 20
+) +
+    theme_minimal()
+```
+
+### Misc Panel Chart - 2
+
+```{r}
+df_merge |>
+    select(c(`Victimisations`, `Households - Vehicle Count (Three motor vehicles)`)) |>
+    mutate("log_vic" = log(Victimisations)) |>
+    select(-Victimisations) |>
+    ggpairs(
+        title = "Scatterplot Matrix",
+        lower = list(continuous = wrap("smooth", alpha = 0.5, size = 0.8)),
+        upper = list(continuous = wrap("cor", size = 3)),
+        diag = list(continuous = wrap("densityDiag")),
+        cardinality_threshold = 20
+    ) +
+    theme_minimal()
+```
+
+## Correlation Calculator
+
+```{r}
+# Apply transformation to explanatory variable if requested
+exp_var <- df_merge$Victimisations
+transform <- "log"
+explanatory <- "Victimisations"
+
+# Prepare results storage
+results <- data.frame(
+    variable = character(),
+    correlation = numeric(),
+    p_value = numeric(),
+    stringsAsFactors = FALSE
+)
+
+# Loop through numeric columns except explanatory variable
+for (col_name in names(df_merge)) {
+    if (col_name != explanatory && is.numeric(df_merge[[col_name]])) {
+        col_data <- df_merge[[col_name]]
+
+        # Apply same transform to target variable if requested
+        if (!is.null(transform)) {
+            if (transform == "log") {
+                col_data <- log(col_data + 1)
+            } else if (transform == "sqrt") {
+                col_data <- sqrt(col_data)
+            }
+        }
+
+        test <- cor.test(col_data, exp_var, use = "pairwise")
+        results <- rbind(results, data.frame(
+            variable = col_name,
+            correlation = test$estimate,
+            p_value = test$p.value,
+            stringsAsFactors = FALSE
+        ))
+    }
+}
+
+# Sort by absolute correlation
+results <- results[order(abs(results$correlation), decreasing = TRUE), ]
+knitr::kable(head(results, n = 10))
+```
+
+
+```{r}
+df_merge |>
+    select(c(`Households - Vehicle Count (Three motor vehicles)`, `Victimisations`)) |>
+    mutate(log_car = log(`Households - Vehicle Count (Three motor vehicles)`)) |>
+    ggplot(aes(x = log_car, y = Victimisations)) +
+    geom_point() +
+    geom_smooth(method = "lm")
+
+
+df_lm <- df_merge |>
+    select(c(`Households - Vehicle Count (Three motor vehicles)`, `Victimisations`)) |>
+    filter(`Households - Vehicle Count (Three motor vehicles)` > 0, !is.na(`Victimisations`))
+car_lm <- lm(log(`Households - Vehicle Count (Three motor vehicles)`) ~ Victimisations, data = df_lm)
+summary(car_lm)
+```
+
+```{r}
+df_merge |>
+    group_by(sa2_name) |>
+    summarize(
+        `Median household income ($)` = median(`Households - Median: Income (Median ($))`, na.rm = TRUE),
+        total_crime = sum(Victimisations, na.rm = TRUE),
+        crowding_rate = (
+            sum(`Households - Crowding Index (Crowded)`, na.rm = TRUE) +
+                sum(`Households - Crowding Index (Two or more bedrooms needed (severely crowded))`, na.rm = TRUE) +
+                sum(`Households - Crowding Index (One bedroom needed (crowded))`, na.rm = TRUE)
+        ) * 100 / sum(`Households - Crowding Index (Total stated)`, na.rm = TRUE)
+    ) |>
+    ggplot(aes(
+        x = `Median household income ($)`,
+        y = total_crime,
+        size = crowding_rate,
+        color = crowding_rate
+    )) +
+    geom_point(alpha = 0.6) +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    scale_color_viridis_c(name = "Crowding rate (%)") +
+    scale_size(name = "Crowding rate (%)") +
+    labs(
+        title = "Income vs Crime with Crowding Rate as Size & Color",
+        x = "Median household income ($)",
+        y = "Total Victimisations"
+    ) +
+    theme_minimal()
+```
