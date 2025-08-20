@@ -2,10 +2,13 @@
 title: STATS 765 - Where are the Crimes? - Milestone 2
 author: Sujay Anjankar - 2433337734
 toc-title: Table of Contents
+bibliography: /home/deck/Documents/Workspace/2025-s2-stats-765/test.bib
+link-citations: true
 ---
 
+[@Wan2019]
 
-```{r setup, include=FALSE}
+```{xr setup, include=FALSE}
 ## Setup
 library(tidyverse)
 library(GGally)
@@ -31,7 +34,7 @@ Special Values:
 | `-999` | Suppressed due to confidentiality |
 
 
-```{r load-files, cache = TRUE}
+```{xr load-files, cache = TRUE}
 df_victimizations <- read_csv(
     paste(path, "/victimizations-data.csv", sep = ""),
     na = c("", "NA"), show_col_types = FALSE
@@ -57,7 +60,7 @@ describe(df_victimizations)
 
 ### Victimizations
 
-```{r cleanup-victimizations, cache = TRUE}
+```{xr cleanup-victimizations, cache = TRUE}
 # Find all columns which only have 1 distinct value.
 single_value_column_names <- df_victimizations |>
     summarize(across(everything(), ~ n_distinct(.))) |>
@@ -95,7 +98,7 @@ colnames(df_victimizations)
 
 ### Meshblock
 
-```{r cleanup-meshblock, cache = TRUE}
+```{xr cleanup-meshblock, cache = TRUE}
 colnames(df_meshblock)
 df_meshblock <- df_meshblock |>
     # This dataset is to just join the two datasets, so drop any excess columns.
@@ -120,7 +123,7 @@ print(
 
 ### Census
 
-```{r cleanup-census, cache = TRUE}
+```{xr cleanup-census, cache = TRUE}
 # The column names are excessively long, shorten them for readability.
 
 single_value_colnames_census <- df_census |>
@@ -178,7 +181,7 @@ df_census <- df_census |>
 
 ### Check Available Years
 
-```{r filtering-by-year}
+```{xr filtering-by-year}
 df_victimizations |>
     select(year) |>
     distinct()
@@ -192,7 +195,7 @@ df_census <- df_census |>
 
 ## Join Datasets
 
-```{r join-all, cache = TRUE}
+```{xr join-all, cache = TRUE}
 df_merge <- inner_join(
     df_census,
     inner_join(
@@ -208,7 +211,7 @@ dim(df_merge)
 
 ### Distribution of Committed Offenses
 
-```{r visualization-1, cache = TRUE}
+```{xr visualization-1, cache = TRUE}
 # Most committed offenses
 df_merge |>
     group_by(`ANZSOC Division`) |>
@@ -227,7 +230,7 @@ df_merge |>
 
 ### Criminal Activity Hotspots
 
-```{r visualization-2, cache = TRUE}
+```{xr visualization-2, cache = TRUE}
 # Areas with a high prevalence of crime
 knitr::kable(
     df_merge |>
@@ -242,7 +245,7 @@ knitr::kable(
 
 #### Overall Crime Rate / 1000 Households in Large Areas
 
-```{r visualization-3, cache = TRUE}
+```{xr visualization-3, cache = TRUE}
 total_number_of_households <- sum(df_merge$`Households - Household Count (Total)`)
 # Consider a 0.1% of the total household count as the threshold to identify large SA2s.
 threshold <- total_number_of_households * 0.001
@@ -279,7 +282,7 @@ knitr::kable(
 
 Observation: Number of victimizations is observed to trend downwards with an increase in median household income.
 
-```{r income-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+```{xr income-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -300,7 +303,7 @@ df_merge |>
 
 #### Communication Access vs Total Crimes by Neighborhood
 
-```{r telecom-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+```{xr telecom-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -327,7 +330,7 @@ df_merge |>
 
 #### Crowding Rates vs Total Crimes by Neighborhood
 
-```{r crowding-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+```{xr crowding-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -359,7 +362,7 @@ df_merge |>
 
 #### Landlord Sector vs Total Crimes
 
-```{r landlord-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+```{xr landlord-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -405,7 +408,7 @@ df_merge |>
 
 #### Weekly Rental ($) vs Total Crimes
 
-```{r rental-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
+```{xr rental-vs-crimes, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -424,7 +427,7 @@ df_merge |>
 
 #### Faceting
 
-```{r low-rent-vs-high-rent, fig.width=10, fig.height=6, cache=TRUE}
+```{xr low-rent-vs-high-rent, fig.width=10, fig.height=6, cache=TRUE}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -466,7 +469,7 @@ df_merge |>
 
 ### Car Theft
 
-```{r car-theft} 
+```{xr car-theft} 
 knitr::kable(df_merge |> group_by(`ANZSOC Division`) |> summarize(n = sum(Victimisations)) |> arrange(desc(n)))
 
 df_merge |>
@@ -500,7 +503,7 @@ df_merge |>
 
 ### Misc Panel Chart - 1
 
-```{r}
+```{xr}
 ggpairs(
     df_merge |>
         filter(`ANZSOC Subdivision` == "Motor vehicle theft and related offences") |>
@@ -516,7 +519,7 @@ ggpairs(
 
 ### Misc Panel Chart - 2
 
-```{r}
+```{xr}
 df_merge |>
     select(c(`Victimisations`, `Households - Vehicle Count (Three motor vehicles)`)) |>
     mutate("log_vic" = log(Victimisations)) |>
@@ -533,7 +536,7 @@ df_merge |>
 
 ## Correlation Calculator
 
-```{r}
+```{xr}
 # Apply transformation to explanatory variable if requested
 exp_var <- df_merge$Victimisations
 transform <- "log"
@@ -577,7 +580,7 @@ knitr::kable(head(results, n = 10))
 ```
 
 
-```{r}
+```{xr}
 df_merge |>
     select(c(`Households - Vehicle Count (Three motor vehicles)`, `Victimisations`)) |>
     mutate(log_car = log(`Households - Vehicle Count (Three motor vehicles)`)) |>
@@ -593,7 +596,7 @@ car_lm <- lm(log(`Households - Vehicle Count (Three motor vehicles)`) ~ Victimis
 summary(car_lm)
 ```
 
-```{r}
+```{xr}
 df_merge |>
     group_by(sa2_name) |>
     summarize(
@@ -622,3 +625,5 @@ df_merge |>
     ) +
     theme_minimal()
 ```
+
+# References {-}
